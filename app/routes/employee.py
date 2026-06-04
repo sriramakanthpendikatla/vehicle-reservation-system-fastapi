@@ -9,7 +9,7 @@ from app.schemas.employee import (
     EmployeeResponse
 )
 from app.utils.db import get_db
-from datetime import datetime
+from datetime import date
 
 router = APIRouter(
     prefix="/employees",
@@ -33,7 +33,7 @@ def create_employee(employee: CreateEmployee,db: Session = Depends(get_db)):
     if not department:
         raise HTTPException(status_code=404,detail="Department not found")
     
-    if employee.driving_license_date < datetime.utcnow():
+    if employee.driving_license_date <= date.today():
         raise HTTPException(status_code=400,detail="Driving license already expired")
 
     new_employee = Employee(

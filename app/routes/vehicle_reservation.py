@@ -27,73 +27,87 @@ router = APIRouter(
 @router.post("/", response_model=VehicleReservationResponse)
 def create_vehicle_reservation(cvr: CreateVehicleReservation,db: Session = Depends(get_db)):
 
-    # Check Department
-    department = db.query(Department).filter(Department.id == cvr.department_id).first()
+    try:
 
-    if not department:
-        raise HTTPException(status_code=404,detail="Department not found")
+        with db.begin():
 
-    # Check Employee
-    employee = db.query(Employee).filter(Employee.id == cvr.employee_id).first()
+            # Check Department
+            department = db.query(Department).filter(Department.id == cvr.department_id).first()
 
-    if not employee:
-        raise HTTPException(status_code=404,detail="Employee not found")
+            if not department:
+                raise HTTPException(status_code=404,detail="Department not found")
 
-    # Check Vehicle
-    vehicle = db.query(Vehicle).filter(Vehicle.id == cvr.vehicle_id).first()
+            # Check Employee
+            employee = db.query(Employee).filter(Employee.id == cvr.employee_id).first()
 
-    if not vehicle:
-        raise HTTPException(status_code=404,detail="Vehicle not found"
-        )
+            if not employee:
+                raise HTTPException(status_code=404,detail="Employee not found")
 
-    # Employee belongs to department
-    if employee.department_id != department.id:
-        raise HTTPException(status_code=400,detail="Employee does not belong to selected department")
+            # Lock Vehicle Row (Concurrency Protection)
+            vehicle = db.query(Vehicle).filter(Vehicle.id == cvr.vehicle_id).with_for_update().first()
 
-    # Driving License Validation
-    if employee.driving_license_date < datetime.utcnow():
-        raise HTTPException(status_code=400,detail="Driving license expired")
+            if not vehicle:
+                raise HTTPException(status_code=404,detail="Vehicle not found")
 
-    # Employee quota check
-    active_reservations = db.query(Vechile_reservation).filter(
-        Vechile_reservation.employee_id == employee.id,
-        Vechile_reservation.reservation_end == None).count()
+            # Department Access Validation
+            if employee.department_id != department.id:
+                raise HTTPException(status_code=400,detail="Employee does not belong to selected department")
+            
+            # Check Vehicle Belongs to Department or not 
+            if vehicle.department_id != department.id:
+                raise HTTPException(status_code=400,detail="vehicle Dont Belongs to Department")
 
-    if active_reservations >= employee.vehicle_quota:
-        raise HTTPException(status_code=400,detail="Employee vehicle quota exceeded")
+            # Driving License Validation
+            if employee.driving_license_date < datetime.today():
+                raise HTTPException(status_code=400,detail="Driving license expired")
 
-    # Vehicle availability check
-    if vehicle.status != Vehicle_status.AVAILABLE:
-        raise HTTPException(status_code=400,detail="Vehicle is not available")
+            # Active Reservation Quota Validation
+            active_reservations = db.query(Vechile_reservation).filter(
+                Vechile_reservation.employee_id == employee.id,
+                Vechile_reservation.reservation_end == None
+            ).count()
 
-    # Create reservation
-    reservation = Vechile_reservation(
-        vehicle_id=cvr.vehicle_id,
-        employee_id=cvr.employee_id,
-        department_id=cvr.department_id
-    )
+            if active_reservations >= employee.vehicle_quota:
+                raise HTTPException(status_code=400,detail="Employee vehicle quota exceeded")
 
-    db.add(reservation)
-    db.flush()
+            # Vehicle Availability Validation
+            if vehicle.status != Vehicle_status.AVAILABLE:
+                raise HTTPException(status_code=400,detail="Vehicle is not available")
 
-    # Update vehicle status
-    vehicle.status = Vehicle_status.RESERVED
+            # Create Reservation
+            reservation = Vechile_reservation(
+                vehicle_id=cvr.vehicle_id,
+                employee_id=cvr.employee_id,
+                department_id=cvr.department_id
+            )
 
-    # Create log
-    vehicle_log = Vehicle_logs(
-        vehicle_id=vehicle.id,
-        employee_id=employee.id,
-        department_id=department.id,
-        timestamp=datetime.utcnow(),
-        action=Action.RESERVED
-    )
+            db.add(reservation)
+            db.flush()
 
-    db.add(vehicle_log)
+            # Update Vehicle Status
+            vehicle.status = Vehicle_status.RESERVED
 
-    db.commit()
-    db.refresh(reservation)
+            # Create Audit Log
+            vehicle_log = Vehicle_logs(
+                vehicle_id=vehicle.id,
+                employee_id=employee.id,
+                department_id=department.id,
+                timestamp=datetime.utcnow(),
+                action=Action.RESERVED
+            )
 
-    return reservation
+            db.add(vehicle_log)
+
+        db.refresh(reservation)
+
+        return reservation
+
+    except HTTPException:
+        raise
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500,detail=f"Reservation failed: {str(e)}")
 
 
 # ==================================
@@ -105,8 +119,22 @@ def get_reservations(db: Session = Depends(get_db)):
 
 
 # ==================================
-# GET ALL LOGS
+# GET RESERVATION BY ID
+# ==================================
+@router.get("/{reservation_id}", response_model=VehicleReservationResponse)
+def get_reservation(reservation_id: int,db: Session = Depends(get_db)):
+
+    reservation = db.query(Vechile_reservation).filter(Vechile_reservation.id == reservation_id).first()
+
+    if not reservation:
+        raise HTTPException(status_code=404,detail="Reservation not found")
+
+    return reservation
+
+
+# ==================================
+# GET VEHICLE LOGS
 # ==================================
 @router.get("/logs")
 def get_logs(db: Session = Depends(get_db)):
-    return db.query(Vehicle_logs).all()
+    return db.query(Vehicle_logs).order_by(Vehicle_logs.timestamp.desc()).all()

@@ -1,4 +1,4 @@
-Corporate Vehicle Pool Management System
+# Corporate Vehicle Pool Management System
 Business Context & Value Proposition
 
 The system manages a company's shared fleet of vehicles, including cars, bikes, and vans, used by employees for official business activities such as client visits, inter-office travel, and field operations. The platform ensures efficient vehicle allocation, prevents double bookings, tracks vehicle usage, and maintains maintenance schedules. Proper control is essential to maximize fleet utilization while ensuring safety, compliance, and operational efficiency.
@@ -38,143 +38,426 @@ Maintenance Conflict Validation: How should future maintenance schedules be vali
 Transactional Consistency: How can reservation creation, vehicle status updates, trip tracking updates, and audit log creation be executed atomically so that partial failures do not leave inconsistent system data?
 
 
-----------------------------------------------------------------------------------------------------------------------------------
-Entities : 
-Department
-    id
-    title
+## Overview
 
-Employee
-    id
-    name
-    department_id
-    driving_license_date
-    vehicle_quota
+The Corporate Vehicle Pool Management System is a backend fleet management platform designed to manage a company's shared vehicle fleet, including cars, bikes, and vans used for official business activities such as client visits, inter-office travel, and field operations.
 
-Vehicle
-    id
-    type
-    department_id
+The system ensures efficient vehicle allocation, prevents double bookings, tracks vehicle utilization, automates maintenance scheduling, and maintains a complete audit trail of vehicle activities.
 
-Vehicle_Reservation
-    id
-    vehicle_id
-    employee_id
-    department_id
-    reservation_start
-    reservation_end
+Built using FastAPI, PostgreSQL, SQLAlchemy, Alembic, and Pydantic.
 
-Maintenance_Schedule
-    id
-    vehicle_id
-    maintenance_start
-    maintenance_end
-    description
+---
 
-Vehicle_status :ENUM
-    AVAILABLE
-    RESERVED
-    IN_USE
-    MAINTENANCE
-    OUT_OF_SERVICE
+## Business Value
 
-Vehicle_Logs
-    id
-    vehicle_id
-    employee_id
-    department_id
-    timestamp
-    action:
-        RESERVED
-        CHECKED_OUT
-        CHECKED_IN
-        CANCELLED
-        MAINTENANCE_STARTED
-        MAINTENANCE_COMPLETED 
+Organizations with shared vehicle fleets often face challenges such as:
 
-Trip
-    id
-    reservation_id
-    start_odometer
-    end_odometer
-    fuel_level_before
-    fuel_level_after
-    check_out_time
-    check_in_time
+* Vehicle overbooking
+* Lack of maintenance visibility
+* Inefficient allocation
+* Missing trip records
+* Poor accountability
 
+This system addresses these issues through reservation controls, trip tracking, maintenance automation, and audit logging.
 
-routes and services for vehicle usage table :
+---
 
-1.vehicle_assignment : id,Department_id,Employee_id,vehicle_id)
-check for deparmtent , employee , vehicle , employee driving_licence validity
-check for employee quota . ----
-check for vechile status = available
+## Core Features
 
+### Department Management
 
+* Create Departments
+* View Departments
+* Update Departments
+* Delete Departments
 
-###check for maintenance blocking : if vehicle is scheduled for maintenance then availability == false  
-vehicle status update to reserved (upto 30min)
+### Employee Management
 
-vehicle assigned.
+* Employee Registration
+* Department Assignment
+* Driving License Validation
+* Vehicle Reservation Quota Management
 
-update transaction in logs table with timestamp
+### Vehicle Management
 
+* Vehicle Registration
+* Vehicle Status Tracking
+* Odometer Tracking
+* Department-Based Allocation
 
-2.vehicle checkout work flow : 
+### Vehicle Reservation
 
-check for employee_id
-check vehicle_id , status = reserved then checkout 
-trip start date ==datetime.now()
-trip ending date == start date + 24hrs(timedelta) 
-fill the fields of vehicle : odometer , fuel , checkout time = current time 
-update vehicle status to in use (db.commit())
+* Reserve Available Vehicles
+* Prevent Double Booking
+* Department Authorization Validation
+* Reservation Quota Enforcement
+* Driving License Verification
 
-update transaction in logs table with timestamp
+### Trip Management
 
+* Vehicle Check-Out Workflow
+* Vehicle Check-In Workflow
+* Fuel Tracking
+* Odometer Tracking
+* Trip Validation
+* Overdue Trip Detection
 
+### Maintenance Management
 
-3.vehicle Checkin workflow:
-   -----------------------------------------> validations: 
+* Automatic Maintenance Scheduling
+* Maintenance Completion Workflow
+* Maintenance Blocking
+* Maintenance Threshold Tracking
 
-   ending_odometer < starting_odometer
-   
-check vehicel_id , status = use in then check in or invalid 
-update  the fields of vehicle : odometer,fuel , return time = current time
+### Vehicle Audit Logs
 
-update vehicle_status = AVAILABLE 
-vechicle trip count +1
-update transaction in logs table with timestamp
+The system maintains complete logs for:
 
+* Vehicle Created
+* Vehicle Reserved
+* Vehicle Checked Out
+* Vehicle Checked In
+* Reservation Cancelled
+* Maintenance Started
+* Maintenance Completed
+* Overdue Trips
 
-4.maintenance:
-   if vehicle  maintenance_trips_count == vehicle.trip count 
-      return Vehicle_status update = "MAINTENANCE"
-commit()
-update transaction in logs table with timestamp
+---
 
-### vehicle -> checkin,status-available(not in maintenace), 
-### if vehicle overdue and maintenance start date >now -> staatus -> Maintenance 
+## Business Rules Implemented
 
-5.maintenance_expiry:
+### Department-Based Access Control
 
-      if Vehicle_status == maintenance > timedelta (3days)
-            return vechicle_status update = AVAILABLE
+Employees can reserve only vehicles that belong to their department.
 
-update transaction in logs table with timestamp
+### Driver Eligibility Validation
 
+Reservations are rejected when:
 
-6.overdue:
+* Driving license has expired
 
-if (
-    vehicle.status == CHECKED_OUT
-    and datetime.utcnow() > trip return date
-):
-    vehicle.status = OVERDUE
-####
-7. if trip_count +1 then quota -1 ---->
+### Reservation Quota Enforcement
 
----------------------------------------------------------------------
+Each employee has a configurable reservation quota.
 
-concurrency handling -------> with db.begin() , with_for_update
+The system prevents employees from exceeding their active reservation limit.
 
-update database for ecery operation -------> commit() , flush()
+### Vehicle Availability Validation
+
+Reservations are allowed only when vehicle status is:
+
+* AVAILABLE
+
+Reservations are blocked when status is:
+
+* RESERVED
+* IN_USE
+* MAINTENANCE
+* OUT_OF_SERVICE
+
+### Maintenance Blocking
+
+Vehicles scheduled for maintenance are automatically excluded from reservation availability.
+
+### Trip Validation
+
+The system validates:
+
+* Ending odometer cannot be less than starting odometer
+* Fuel levels must be valid
+* Vehicle must be checked out before check-in
+
+---
+
+## Vehicle Lifecycle
+
+```text
+AVAILABLE
+    ↓
+RESERVED
+    ↓
+IN_USE
+    ↓
+AVAILABLE
+```
+
+Maintenance Flow:
+
+```text
+AVAILABLE
+    ↓
+RESERVED
+    ↓
+IN_USE
+    ↓
+MAINTENANCE
+    ↓
+AVAILABLE
+```
+
+---
+
+## Database Design
+
+### Department
+
+| Field | Type    |
+| ----- | ------- |
+| id    | Integer |
+| title | String  |
+
+### Employee
+
+| Field                | Type     |
+| -------------------- | -------- |
+| id                   | Integer  |
+| name                 | String   |
+| department_id        | Integer  |
+| driving_license_date | DateTime |
+| vehicle_quota        | Integer  |
+
+### Vehicle
+
+| Field                | Type    |
+| -------------------- | ------- |
+| id                   | Integer |
+| type                 | String  |
+| number               | String  |
+| department_id        | Integer |
+| status               | Enum    |
+| current_odometer     | Integer |
+| maintenance_intervel | Integer |
+| maintenance_atkms    | Integer |
+
+### Vehicle Reservation
+
+| Field             | Type     |
+| ----------------- | -------- |
+| id                | Integer  |
+| vehicle_id        | Integer  |
+| employee_id       | Integer  |
+| department_id     | Integer  |
+| reservation_start | DateTime |
+| reservation_end   | DateTime |
+
+### Trip
+
+| Field             | Type     |
+| ----------------- | -------- |
+| id                | Integer  |
+| reservation_id    | Integer  |
+| start_odometer    | Integer  |
+| end_odometer      | Integer  |
+| fuel_level_before | Integer  |
+| fuel_level_after  | Integer  |
+| expected_end_time | DateTime |
+| actual_end_time   | DateTime |
+| check_in_time     | DateTime |
+
+### Maintenance Schedule
+
+| Field             | Type     |
+| ----------------- | -------- |
+| id                | Integer  |
+| vehicle_id        | Integer  |
+| maintenance_start | DateTime |
+| maintenance_end   | DateTime |
+| description       | String   |
+
+### Vehicle Logs
+
+| Field         | Type     |
+| ------------- | -------- |
+| id            | Integer  |
+| vehicle_id    | Integer  |
+| employee_id   | Integer  |
+| department_id | Integer  |
+| timestamp     | DateTime |
+| action        | Enum     |
+
+---
+
+## Vehicle Status Enum
+
+```python
+AVAILABLE
+RESERVED
+IN_USE
+MAINTENANCE
+OUT_OF_SERVICE
+```
+
+---
+
+## Vehicle Log Actions
+
+```python
+CREATED
+RESERVED
+CHECKED_OUT
+CHECKED_IN
+CANCELLED
+MAINTENANCE_STARTED
+MAINTENANCE_COMPLETED
+OVERDUE
+```
+
+---
+
+## Ambiguity Resolution Decisions
+
+### Concurrent Reservation Handling
+
+Implemented using:
+
+```python
+with db.begin()
+with_for_update()
+```
+
+to prevent double bookings and race conditions.
+
+### Vehicle Status Management
+
+Vehicle status is stored directly in the database and updated on every operation.
+
+This improves query performance and simplifies availability checks.
+
+### Automatic Trip Expiry
+
+Trips exceeding their expected return time are marked as:
+
+```python
+OVERDUE
+```
+
+and logged in the audit trail.
+
+### Maintenance Conflict Validation
+
+The system validates that no active maintenance schedule already exists before creating a new maintenance schedule.
+
+### Transactional Consistency
+
+Reservation creation, status updates, trip tracking, maintenance scheduling, and audit logging are executed within database transactions to avoid partial failures.
+
+---
+
+## API Modules
+
+### Departments
+
+* Create Department
+* Get Departments
+* Get Department by ID
+* Update Department
+* Delete Department
+
+### Employees
+
+* Create Employee
+* Get Employees
+* Get Employee by ID
+* Update Employee
+* Delete Employee
+
+### Vehicles
+
+* Create Vehicle
+* Get Vehicles
+* Get Vehicle Status
+* Vehicle Logs
+
+### Vehicle Reservations
+
+* Create Reservation
+* Get Reservations
+
+### Trips
+
+* Vehicle Checkout
+* Vehicle Check-In
+* Overdue Tracking
+
+### Maintenance
+
+* Create Maintenance Schedule
+* Complete Maintenance
+* Get Maintenance Records
+
+---
+
+## Tech Stack
+
+### Backend
+
+* FastAPI
+
+### Database
+
+* PostgreSQL
+
+### ORM
+
+* SQLAlchemy
+
+### Database Migrations
+
+* Alembic
+
+### Validation
+
+* Pydantic
+
+### API Documentation
+
+* Swagger UI
+
+---
+
+## Running the Project
+
+Install Dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+Run Migrations
+
+```bash
+alembic upgrade head
+```
+
+Start Server
+
+```bash
+uvicorn app.main:app --reload
+```
+
+Swagger Documentation
+
+```text
+http://localhost:8000/docs
+```
+
+---
+
+## Future Enhancements
+
+* JWT Authentication
+* Role-Based Access Control
+* Vehicle Reservation Time Slots
+* Notification Service
+* Email Alerts
+* Dashboard Analytics
+* Fleet Utilization Reports
+* GPS Integration
+
+---
+
+## Author
+
+**Pendikatla Sri RamaKanth**
+
+AI/ML Enthusiast | Backend Developer | FastAPI Developer
