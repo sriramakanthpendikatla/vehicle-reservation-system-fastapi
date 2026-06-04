@@ -116,6 +116,14 @@ def check_in(cti: TripCheckin,db: Session = Depends(get_db)):
 
     vehicle.current_odometer = cti.end_odometer
 
+    checkin_log = Vehicle_logs(
+        department_id=reservation.department_id,
+        employee_id=reservation.employee_id,
+        vehicle_id=vehicle.id,
+        timestamp=datetime.utcnow(),
+        action=Action.CHECKED_IN
+    )
+
     reservation.reservation_end = datetime.utcnow()
 
     # Maintenance Check
@@ -152,13 +160,7 @@ def check_in(cti: TripCheckin,db: Session = Depends(get_db)):
     else:
         vehicle.status = Vehicle_status.AVAILABLE
 
-    checkin_log = Vehicle_logs(
-        department_id=reservation.department_id,
-        employee_id=reservation.employee_id,
-        vehicle_id=vehicle.id,
-        timestamp=datetime.utcnow(),
-        action=Action.CHECKED_IN
-    )
+    
 
     db.add(checkin_log)
 
