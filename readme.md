@@ -1,6 +1,6 @@
 # Corporate Vehicle Pool Management System
 Business Context & Value Proposition
-  
+    
 The system manages a company's shared fleet of vehicles, including cars, bikes, and vans, used by employees for official business activities such as client visits, inter-office travel, and field operations. The platform ensures efficient vehicle allocation, prevents double bookings, tracks vehicle usage, and maintains maintenance schedules. Proper control is essential to maximize fleet utilization while ensuring safety, compliance, and operational efficiency.
 
 Business Capabilities & Rules
